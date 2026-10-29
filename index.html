@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>SSH入力行動の収集</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* layout: 1カラムの実験手順(同意→アンケート→練習→本番→事後質問),本番はターミナル+指示パネル. */
+:root{
+  --bg:#f6f7f8; --surface:#ffffff; --ink:#16191c; --muted:#5d656e; --line:#d5d9de;
+  --accent:#1f4f7a; --ok:#1e6b3a; --warn:#8a5a00; --bad:#9b2c2c;
+  --term-bg:#111417; --term-fg:#d7dde3; --term-dim:#7d8790; --term-cursor:#d7dde3;
+  --sans:"IBM Plex Sans JP","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121517; --surface:#1a1e21; --ink:#e4e8eb; --muted:#9aa3ab; --line:#2f353a;
+  --accent:#8db8de; --ok:#7cc795; --warn:#e0b45c; --bad:#e58a8a;
+  --term-bg:#0a0c0e; --term-fg:#d7dde3; --term-dim:#6f7a83; --term-cursor:#d7dde3; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121517; --surface:#1a1e21; --ink:#e4e8eb; --muted:#9aa3ab; --line:#2f353a;
+  --accent:#8db8de; --ok:#7cc795; --warn:#e0b45c; --bad:#e58a8a;
+  --term-bg:#0a0c0e; --term-fg:#d7dde3; --term-dim:#6f7a83; --term-cursor:#d7dde3; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.7}
+.wrap{max-width:860px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:24px}
+h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.01em}
+h2{font-size:17px;margin:0 0 8px;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px}
+section.view{display:flex;flex-direction:column;gap:16px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:20px}
+.panel p{margin:0 0 10px;max-width:68ch}
+.panel ul{margin:0 0 10px;padding-left:1.3em;max-width:68ch}
+.steps{display:flex;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.steps span{padding:2px 8px;border:1px solid var(--line);border-radius:999px}
+.steps span.on{color:var(--ink);border-color:var(--ink)}
+label{display:block}
+.field{display:flex;flex-direction:column;gap:6px;padding:12px 0;border-top:1px solid var(--line)}
+.field:first-child{border-top:0;padding-top:0}
+.field>.q{font-weight:500}
+.opts{display:flex;flex-wrap:wrap;gap:6px 18px}
+.opts label{display:flex;align-items:center;gap:6px;cursor:pointer}
+input[type=text],textarea{font:inherit;font-size:14px;padding:6px 10px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);max-width:100%}
+textarea{font-family:var(--mono);font-size:12px;width:100%;min-height:120px;box-sizing:border-box}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button.btn{font:inherit;font-size:14px;font-weight:500;padding:8px 18px;border-radius:4px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);cursor:pointer}
+button.btn.sec{background:transparent;color:var(--ink);border-color:var(--line)}
+button.btn.danger{background:transparent;color:var(--bad);border-color:var(--bad)}
+button.btn:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible,input:focus-visible,textarea:focus-visible,.term:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{font-size:13px;color:var(--muted)}
+.alert{border-left:3px solid var(--warn);padding:8px 12px;background:var(--surface);font-size:14px}
+.alert.bad{border-color:var(--bad)}
+.alert.ok{border-color:var(--ok)}
+/* task */
+.task{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.instr{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.instr .phase{font-size:12px;letter-spacing:.06em;color:var(--muted)}
+.instr .what{font-size:16px;font-weight:700}
+.instr .how{font-size:14px;color:var(--muted)}
+.term{background:var(--term-bg);color:var(--term-fg);font-family:var(--mono);font-size:14px;line-height:1.6;border-radius:6px;padding:14px 16px;min-height:260px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;cursor:text}
+.term .dim{color:var(--term-dim)}
+.cursor{display:inline-block;width:.6em;height:1.1em;vertical-align:text-bottom;background:var(--term-cursor);animation:blink 1.05s steps(1) infinite}
+.term:not(:focus) .cursor{background:transparent;outline:1px solid var(--term-dim)}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion: reduce){.cursor{animation:none}}
+.focushint{font-size:13px;color:var(--warn)}
+/* review */
+.review{font-family:var(--mono);font-size:14px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;align-items:baseline}
+.review .k{color:var(--muted);font-family:var(--sans);font-size:13px}
+.review .v{word-break:break-all}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>SSH入力行動の収集</h1>
+      <div class="sub">関西大学 小林研究室 卒業研究(瀬古)</div>
+    </div>
+  </header>
+
+  <!-- 1. 同意 -->
+  <section class="view" id="vConsent">
+    <div class="steps" data-step="0"></div>
+    <div class="panel">
+      <h2>実験への協力のお願い</h2>
+      <p>この実験では,SSHでサーバにログインしようとしてパスワードを間違える場面を再現し,その時の入力の仕方を記録します.集めたデータは,攻撃検知システムが正規の利用者を誤って攻撃と判定しないかを確かめるために使います.</p>
+      <ul>
+        <li><b>本物のパスワードは絶対に入力しないでください.</b>その場で考えた文字列を使ってください.</li>
+        <li>記録するのは,入力した文字列,キーを押した・離した時刻,簡単なアンケートの回答です.氏名は記録しません.</li>
+        <li>所要時間は1回あたり3分程度です.途中でやめても構いません.</li>
+        <li>データは卒業研究の目的にのみ使用し,論文では統計値として扱います.</li>
+      </ul>
+      <p class="note">問い合わせ先: 瀬古(関西大学 小林研究室)</p>
+      <div id="touchBlock" class="alert bad" hidden>スマートフォンやタブレットでは実施できません.物理キーボードのあるPCで開いてください.</div>
+      <label class="opts" style="margin:8px 0 14px"><span style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="agree"> 上記を理解し,協力に同意します</span></label>
+      <div class="btnrow"><button class="btn" id="toSurvey" disabled>次へ</button></div>
+    </div>
+  </section>
+
+  <!-- 2. 事前アンケート -->
+  <section class="view" id="vSurvey" hidden>
+    <div class="steps" data-step="1"></div>
+    <div class="panel" id="surveyForm">
+      <h2>事前アンケート</h2>
+      <div class="field"><span class="q">参加者ID</span>
+        <input type="text" id="pid" maxlength="16" placeholder="例: P01" autocomplete="off" style="width:12em">
+        <span class="note">実験者から指定されたIDを入力してください.指定がなければ空欄のままで,自動で発行します.</span></div>
+      <div class="field"><span class="q">所属</span><div class="opts" data-name="affil">
+        <label><input type="radio" name="affil" value="seminar">ゼミ</label>
+        <label><input type="radio" name="affil" value="parttime">アルバイト先</label>
+        <label><input type="radio" name="affil" value="other">その他</label></div></div>
+      <div class="field"><span class="q">今使っているキーボード</span><div class="opts" data-name="kbd">
+        <label><input type="radio" name="kbd" value="laptop">ノートPCの内蔵キーボード</label>
+        <label><input type="radio" name="kbd" value="external">外付けキーボード</label></div></div>
+      <div class="field"><span class="q">キーボードの配列</span><div class="opts" data-name="layout">
+        <label><input type="radio" name="layout" value="jis">日本語(JIS)</label>
+        <label><input type="radio" name="layout" value="us">英語(US)</label>
+        <label><input type="radio" name="layout" value="unknown">わからない</label></div></div>
+      <div class="field"><span class="q">このキーボードは普段から使っているものですか</span><div class="opts" data-name="own">
+        <label><input type="radio" name="own" value="yes">はい</label>
+        <label><input type="radio" name="own" value="no">いいえ(借りている等)</label></div></div>
+      <div class="field"><span class="q">SSHを使う頻度</span><div class="opts" data-name="ssh">
+        <label><input type="radio" name="ssh" value="never">使ったことがない</label>
+        <label><input type="radio" name="ssh" value="sometimes">たまに使う</label>
+        <label><input type="radio" name="ssh" value="daily">ほぼ毎日使う</label></div></div>
+      <div class="field"><span class="q">普段パスワードはどう入力しますか</span><div class="opts" data-name="pwmgr">
+        <label><input type="radio" name="pwmgr" value="manual">ほぼ手で打つ</label>
+        <label><input type="radio" name="pwmgr" value="mixed">半々</label>
+        <label><input type="radio" name="pwmgr" value="manager">ほぼ自動入力・パスワード管理ソフト</label></div></div>
+      <div class="field"><span class="q">タイピングの自信(1: 苦手 〜 5: 得意)</span><div class="opts" data-name="typing">
+        <label><input type="radio" name="typing" value="1">1</label><label><input type="radio" name="typing" value="2">2</label>
+        <label><input type="radio" name="typing" value="3">3</label><label><input type="radio" name="typing" value="4">4</label>
+        <label><input type="radio" name="typing" value="5">5</label></div></div>
+      <div class="btnrow" style="margin-top:12px"><button class="btn" id="toPractice" disabled>次へ</button>
+        <span class="note" id="surveyMissing"></span></div>
+    </div>
+  </section>
+
+  <!-- 3. 説明と練習 / 4. 本番 -->
+  <section class="view" id="vTask" hidden>
+    <div class="steps" data-step="2"></div>
+    <div class="panel" id="taskIntro">
+      <h2 id="introTitle">やること</h2>
+      <p>研究室のサーバ <code>david</code> にSSHでログインしようとしている自分を想像してください.パスワードを思い出しながら打つものの,3回とも失敗する,という場面です.</p>
+      <ul>
+        <li><b>1回目:</b> 自分のパスワードだと思う文字列を,その場で考えて入力します(8文字以上,半角英数記号).</li>
+        <li><b>2回目:</b> 1回目の文字列を<b>1〜2文字だけ</b>変えて入力します(打ち間違いや,数字・記号の思い違いをイメージ).</li>
+        <li><b>3回目:</b> 自由です.2回目と同じでも,1回目に戻しても,まったく別の文字列でも構いません.</li>
+      </ul>
+      <p>本物のSSHと同じく,<b>パスワードは画面に表示されません</b>.Backspaceでの修正はできます.日本語入力はオフ(半角英数)にしてください.</p>
+      <p class="note">まず練習で,表示されない入力に慣れてください.練習の入力は記録しません.</p>
+    </div>
+    <div class="task">
+      <div class="instr" aria-live="polite">
+        <span class="phase" id="iPhase">練習</span>
+        <span class="what" id="iWhat">ターミナルをクリックしてから始めてください</span>
+        <span class="how" id="iHow"></span>
+      </div>
+      <div class="term" id="term" tabindex="0" role="textbox" aria-label="SSHターミナル"></div>
+      <div class="focushint" id="focusHint" hidden>ターミナルから入力が外れました.ターミナルをクリックしてから続けてください.</div>
+      <div id="taskNotice" class="alert" hidden></div>
+      <div class="btnrow"><button class="btn" id="startMain" hidden>本番を始める</button>
+        <button class="btn sec" id="redoPractice" hidden>もう一度練習する</button>
+        <button class="btn" id="toPost" hidden>次へ</button></div>
+    </div>
+  </section>
+
+  <!-- 5. 事後質問 -->
+  <section class="view" id="vPost" hidden>
+    <div class="steps" data-step="3"></div>
+    <div class="panel">
+      <h2>入力した内容の確認</h2>
+      <div class="review" id="review"></div>
+    </div>
+    <div class="panel">
+      <h2>事後質問</h2>
+      <div class="field"><span class="q">2回目は,どんな変え方をイメージしましたか</span><div class="opts">
+        <label><input type="radio" name="p2" value="typo">打ち間違い(隣のキーを押した等)</label>
+        <label><input type="radio" name="p2" value="recall">思い違い(数字や記号,大文字小文字など)</label>
+        <label><input type="radio" name="p2" value="other">その他</label></div></div>
+      <div class="field"><span class="q">3回目は,どういうつもりで入力しましたか</span><div class="opts">
+        <label><input type="radio" name="p3" value="retype2">2回目を打ち間違えたと思い,同じものを打ち直した</label>
+        <label><input type="radio" name="p3" value="back1">1回目に戻した</label>
+        <label><input type="radio" name="p3" value="variant">別の変え方を試した</label>
+        <label><input type="radio" name="p3" value="new">まったく別のパスワードを試した</label>
+        <label><input type="radio" name="p3" value="other">その他</label></div></div>
+      <div class="field"><span class="q">上の確認を見て,意図と違う文字列になっていた回はありますか(複数選択可)</span><div class="opts">
+        <label><input type="checkbox" name="pt" value="1">1回目</label>
+        <label><input type="checkbox" name="pt" value="2">2回目</label>
+        <label><input type="checkbox" name="pt" value="3">3回目</label>
+        <label><input type="checkbox" name="pt" value="none">なし</label></div></div>
+      <div class="btnrow" style="margin-top:12px"><button class="btn" id="finish" disabled>完了</button></div>
+    </div>
+  </section>
+
+  <!-- 6. 完了 -->
+  <section class="view" id="vDone" hidden>
+    <div class="steps" data-step="4"></div>
+    <div class="panel">
+      <h2>ご協力ありがとうございました</h2>
+      <div id="doneSaved" hidden><p class="alert ok" id="doneSavedMsg"></p></div>
+      <div id="doneRemote" hidden>
+        <p>結果を自動で送信できなかったため,下の<b>送信用データ</b>を実験者(瀬古)に送ってください.コピーしてLINEやメールに貼り付けるか,ファイルとして保存して送ってください.</p>
+        <p class="note" id="remoteCount"></p>
+        <textarea id="remoteData" readonly aria-label="送信用データ"></textarea>
+        <div class="btnrow" style="margin-top:8px">
+          <button class="btn" id="copyRemote">コピー</button>
+          <button class="btn sec" id="saveRemote" hidden>ファイルとして保存</button>
+          <span class="note" id="copyMsg"></span></div>
+      </div>
+      <p style="margin-top:14px" id="againNote">可能であれば,1人あたり合計3回まで,毎回ちがう文字列で協力してください.</p>
+      <div class="btnrow">
+        <button class="btn" id="again">同じ参加者でもう1回</button>
+        <button class="btn sec" id="newPerson">別の参加者を始める</button></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+"use strict";
+const CFG = { schema: 1, host: "david", minLen: 8, maxLen: 64, failDelayMs: 2000, attempts: 3, recommendedSessions: 3 };
+const $ = (id) => document.getElementById(id);
+const STEPS = ["同意", "アンケート", "練習・本番", "事後質問", "完了"];
+document.querySelectorAll(".steps").forEach((el) => {
+  const on = +el.dataset.step;
+  el.innerHTML = STEPS.map((s, i) => `<span class="${i === on ? "on" : ""}">${s}</span>`).join("");
+});
+
+/* ---------- storage helpers (per-browser convenience) ---------- */
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+/* ---------- 送信先 ----------
+ * Google Apps Script のウェブアプリURLを入れると,完了時に自動送信する.
+ * 空文字のままなら,参加者に「送信用データ」を送ってもらう方式になる.
+ */
+const ENDPOINT = "https://script.google.com/macros/s/AKfycbzAzSShSnDR7yKTeqPC-w7hvXjNKTSef3apsCFiqY_R64K0mwnYwTfSnzWCU9oUUyqc/exec";
+
+/* ---------- view switching ---------- */
+const VIEWS = ["vConsent", "vSurvey", "vTask", "vPost", "vDone"];
+function show(id) {
+  VIEWS.forEach((v) => ($(v).hidden = v !== id));
+  window.scrollTo(0, 0);
+}
+
+/* ---------- consent ---------- */
+const touchOnly = matchMedia("(pointer: coarse)").matches && !matchMedia("(any-pointer: fine)").matches;
+$("touchBlock").hidden = !touchOnly;
+$("agree").onchange = () => ($("toSurvey").disabled = !$("agree").checked || touchOnly);
+$("toSurvey").onclick = () => show("vSurvey");
+
+/* ---------- survey ---------- */
+const SURVEY_KEYS = ["affil", "kbd", "layout", "own", "ssh", "pwmgr", "typing"];
+const radioVal = (name) => (document.querySelector(`input[name="${name}"]:checked`) || {}).value || null;
+function checkSurvey() {
+  const missing = SURVEY_KEYS.filter((k) => !radioVal(k));
+  $("toPractice").disabled = missing.length > 0;
+  $("surveyMissing").textContent = missing.length ? `未回答: ${missing.length}問` : "";
+}
+$("surveyForm").addEventListener("change", checkSurvey);
+checkSurvey();
+
+let participant = null; // {pid, survey}
+$("toPractice").onclick = () => {
+  let pid = $("pid").value.trim().replace(/[^A-Za-z0-9_-]/g, "");
+  if (!pid) pid = LS.get("auto_pid", null) || ("A" + Math.random().toString(36).slice(2, 7).toUpperCase());
+  LS.set("auto_pid", pid);
+  const survey = {}; SURVEY_KEYS.forEach((k) => (survey[k] = radioVal(k)));
+  survey.typing = +survey.typing;
+  participant = { pid, survey };
+  startPractice();
+};
+
+/* ---------- terminal ---------- */
+const term = $("term");
+let lines = [];          // committed html lines
+let liveHtml = "";       // current line (prompt + echo)
+function esc(s) { return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function render() {
+  term.innerHTML = lines.join("\n") + (lines.length ? "\n" : "") + liveHtml + (phase.capturing ? '<span class="cursor"></span>' : "");
+  term.scrollTop = term.scrollHeight;
+}
+function commit(html) { lines.push(html); }
+function setInstr(p, w, h) { $("iPhase").textContent = p; $("iWhat").textContent = w; $("iHow").textContent = h || ""; }
+function notice(msg, kind) { const n = $("taskNotice"); n.textContent = msg; n.className = "alert" + (kind ? " " + kind : ""); n.hidden = !msg; }
+
+let phase = { name: "idle", capturing: false };
+let cap = null;          // current capture
+let sessionT0 = 0;       // performance time origin of the main session
+let session = null;      // session being built
+let practice = false;
+
+function newCapture(kind) {
+  cap = { kind, buf: "", events: [], t0: performance.now(), first: null, bs: 0, cu: 0, paste: 0, blur: 0, caps: false, imeRestarts: 0 };
+  phase.capturing = true;
+}
+function rel(t) { return Math.round((t - cap.t0) * 10) / 10; }
+
+term.addEventListener("keydown", (e) => {
+  if (!phase.capturing || !cap) return;
+  const t = e.timeStamp || performance.now();
+  if (e.key === "Process" || e.isComposing || e.keyCode === 229) {
+    e.preventDefault();
+    cap.imeRestarts++;
+    restartCapture("日本語入力がオンになっています.半角英数に切り替えてから,この回を最初から入力し直してください.");
+    return;
+  }
+  cap.events.push({ ty: "d", k: e.key, c: e.code, t: rel(t), r: e.repeat ? 1 : 0 });
+  if (cap.first === null && e.key !== "Enter") cap.first = rel(t);
+  if (e.getModifierState && e.getModifierState("CapsLock")) cap.caps = true;
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (e.key === "Enter") { e.preventDefault(); cap.tEnter = rel(t); submit(); return; }
+  if (e.key === "Backspace") { e.preventDefault(); cap.buf = cap.buf.slice(0, -1); cap.bs++; liveEcho(); return; }
+  if (e.ctrlKey && (e.key === "u" || e.key === "U")) { e.preventDefault(); cap.buf = ""; cap.cu++; liveEcho(); return; }
+  if (ctrl && (e.key === "v" || e.key === "V")) { e.preventDefault(); cap.paste++; notice("貼り付けは使えません.手で入力してください.", "bad"); return; }
+  if (e.key === "Tab") { e.preventDefault(); return; }
+  if (e.key.length === 1 && !ctrl) {
+    e.preventDefault();
+    if (/[^\x20-\x7e]/.test(e.key)) { cap.imeRestarts++; restartCapture("半角英数記号以外の文字が入力されました.入力モードを確認して,この回を最初から入力し直してください."); return; }
+    if (cap.buf.length < CFG.maxLen) cap.buf += e.key;
+    liveEcho();
+  }
+});
+term.addEventListener("keyup", (e) => {
+  if (!phase.capturing || !cap) return;
+  cap.events.push({ ty: "u", k: e.key, c: e.code, t: rel(e.timeStamp || performance.now()) });
+});
+term.addEventListener("paste", (e) => { e.preventDefault(); if (cap) cap.paste++; });
+term.addEventListener("blur", () => { if (phase.capturing && cap) { cap.blur++; $("focusHint").hidden = false; } render(); });
+term.addEventListener("focus", () => { $("focusHint").hidden = true; render(); });
+term.addEventListener("mousedown", () => setTimeout(() => term.focus(), 0));
+
+function liveEcho() {
+  // username is echoed, passwords are not (same as OpenSSH)
+  if (cap.kind === "user") liveHtml = '<span class="dim">$ </span>ssh ' + esc(cap.buf) + "@" + CFG.host;
+  render();
+}
+function restartCapture(msg) {
+  const kind = cap.kind;
+  const stash = cap;
+  newCapture(kind);
+  cap.imeRestarts = stash.imeRestarts;
+  cap.discarded = (stash.discarded || []).concat([{ reason: "ime", events: stash.events }]);
+  notice(msg, "bad");
+  if (kind === "user") liveEcho(); else render();
+}
+
+/* ---------- practice ---------- */
+function startPractice() {
+  practice = true; lines = []; show("vTask");
+  $("taskIntro").hidden = false; $("startMain").hidden = true; $("redoPractice").hidden = true; $("toPost").hidden = true;
+  notice("");
+  commit('<span class="dim">練習用の画面です.入力は記録されません.</span>');
+  liveHtml = "practice@" + CFG.host + "'s password: ";
+  newCapture("practice");
+  setInstr("練習", "何か文字を打ってEnterを押してください", "画面には何も表示されませんが,入力は受け付けています.");
+  render(); term.focus();
+}
+$("redoPractice").onclick = startPractice;
+
+/* ---------- main session ---------- */
+$("startMain").onclick = startMain;
+function startMain() {
+  practice = false; lines = []; notice("");
+  $("taskIntro").hidden = true; $("startMain").hidden = true; $("redoPractice").hidden = true; $("toPost").hidden = true;
+  const done = LS.get("done_count_" + participant.pid, 0);
+  session = {
+    schema: CFG.schema,
+    id: participant.pid + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+    pid: participant.pid,
+    sessionNo: done + 1,
+    createdAt: new Date().toISOString(),
+    mode: ENDPOINT ? "web" : "remote",
+    survey: participant.survey,
+    env: {
+      ua: navigator.userAgent, platform: navigator.userAgentData?.platform || navigator.platform || "",
+      lang: navigator.language, tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      screen: screen.width + "x" + screen.height,
+    },
+    config: { minLen: CFG.minLen, failDelayMs: CFG.failDelayMs, host: CFG.host },
+    username: null, attempts: [], rejected: [], post: null, derived: null,
+  };
+  sessionT0 = performance.now();
+  liveHtml = "";
+  newCapture("user");
+  liveEcho();
+  setInstr("ユーザ名", "ログインに使うユーザ名を打ってEnter", "普段使っている形式のユーザ名で構いません(本名そのものは避けてください).半角英数と . _ - が使えます.");
+  term.focus();
+}
+
+function absT(x) { return x === null || x === undefined ? null : Math.round((cap.t0 - sessionT0 + x) * 10) / 10; }
+function packCapture() {
+  return {
+    value: cap.buf, events: cap.events,
+    tPrompt: absT(0), tFirst: absT(cap.first), tEnter: absT(cap.tEnter),
+    backspace: cap.bs, ctrlU: cap.cu, paste: cap.paste, blur: cap.blur, capsLock: cap.caps,
+    imeRestarts: cap.imeRestarts, discarded: cap.discarded || [],
+  };
+}
+
+function askPw(n) {
+  liveHtml = esc(session.username.value) + "@" + CFG.host + "'s password: ";
+  newCapture("pw" + n);
+  const I = {
+    1: ["1回目 / 3", "自分のパスワードだと思う文字列を入力", `その場で考えた${CFG.minLen}文字以上の文字列.この文字列を2回目まで覚えておいてください.`],
+    2: ["2回目 / 3", "1回目の文字列を1〜2文字だけ変えて入力", "打ち間違いや,数字・記号の思い違いをイメージしてください."],
+    3: ["3回目 / 3", "最後の1回です.自由に入力", "2回目と同じ,1回目に戻す,まったく別の文字列,どれでも構いません."],
+  }[n];
+  setInstr(...I);
+  render(); term.focus();
+}
+
+function submit() {
+  const k = cap.kind;
+  if (k === "practice") {
+    phase.capturing = false;
+    commit(liveHtml); liveHtml = "";
+    commit('<span class="dim">(練習なので記録していません)</span>');
+    render();
+    setInstr("練習", "練習は以上です", "本番では,このあとユーザ名とパスワードを3回入力します.");
+    $("startMain").hidden = false; $("redoPractice").hidden = false; $("taskIntro").hidden = false;
+    $("introTitle").textContent = "本番の手順";
+    return;
+  }
+  if (k === "user") {
+    if (!/^[A-Za-z0-9._-]{1,32}$/.test(cap.buf)) {
+      session.rejected.push({ kind: "user", reason: "format", ...packCapture() });
+      notice("ユーザ名は半角英数と . _ - の1〜32文字で入力してください.", "bad");
+      newCapture("user"); liveEcho(); return;
+    }
+    notice("");
+    session.username = packCapture();
+    phase.capturing = false;
+    commit(liveHtml);
+    askPw(1);
+    return;
+  }
+  const n = +k.slice(2);
+  const v = cap.buf;
+  let reason = null, msg = "";
+  if (v.length === 0) { reason = "empty"; msg = "何も入力されていません.もう一度入力してください."; }
+  else if (n === 1 && v.length < CFG.minLen) { reason = "short"; msg = `1回目は${CFG.minLen}文字以上で入力してください(今の入力は${v.length}文字でした).`; }
+  if (reason) {
+    session.rejected.push({ kind: k, reason, ...packCapture() });
+    notice(msg, "bad");
+    newCapture(k); render(); return;
+  }
+  notice("");
+  session.attempts.push({ n, ...packCapture() });
+  phase.capturing = false;
+  commit(liveHtml); liveHtml = ""; render();
+  setInstr(`${n}回目 / 3`, "サーバの応答を待っています", "");
+  setTimeout(() => {
+    if (n < CFG.attempts) {
+      commit("Permission denied, please try again.");
+      askPw(n + 1);
+    } else {
+      commit(esc(session.username.value) + "@" + CFG.host + ": Permission denied (publickey,password).");
+      commit('<span class="dim">$ </span>');
+      render();
+      setInstr("終了", "入力は以上です", "「次へ」を押して,入力内容の確認と事後質問に進んでください.");
+      $("toPost").hidden = false; $("toPost").focus();
+    }
+  }, CFG.failDelayMs);
+}
+
+/* ---------- metrics ---------- */
+// Levenshtein with operation backtrace
+function levOps(a, b) {
+  const m = a.length, n = b.length, D = [];
+  for (let i = 0; i <= m; i++) { D[i] = new Array(n + 1).fill(0); D[i][0] = i; }
+  for (let j = 0; j <= n; j++) D[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
+    D[i][j] = Math.min(D[i - 1][j] + 1, D[i][j - 1] + 1, D[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  const ops = []; let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && D[i][j] === D[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)) {
+      if (a[i - 1] !== b[j - 1]) ops.push({ op: "sub", i: i - 1, a: a[i - 1], b: b[j - 1] });
+      i--; j--;
+    } else if (i > 0 && D[i][j] === D[i - 1][j] + 1) { ops.push({ op: "del", i: i - 1, a: a[i - 1], b: "" }); i--; }
+    else { ops.push({ op: "ins", i: i, a: "", b: b[j - 1] }); j--; }
+  }
+  ops.reverse();
+  return { d: D[m][n], ops };
+}
+// Damerau (optimal string alignment)
+function osa(a, b) {
+  const m = a.length, n = b.length, D = [];
+  for (let i = 0; i <= m; i++) { D[i] = new Array(n + 1).fill(0); D[i][0] = i; }
+  for (let j = 0; j <= n; j++) D[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    const c = a[i - 1] === b[j - 1] ? 0 : 1;
+    D[i][j] = Math.min(D[i - 1][j] + 1, D[i][j - 1] + 1, D[i - 1][j - 1] + c);
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) D[i][j] = Math.min(D[i][j], D[i - 2][j - 2] + 1);
+  }
+  return D[m][n];
+}
+// US-QWERTY key positions (unshifted base), used only for "adjacent key" tagging of substitutions
+const ROWS = [["`1234567890-=", 0], ["qwertyuiop[]\\", 1.5], ["asdfghjkl;'", 1.75], ["zxcvbnm,./", 2.25]];
+const SHIFT = { "~": "`", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7", "*": "8", "(": "9", ")": "0", "_": "-", "+": "=", "{": "[", "}": "]", "|": "\\", ":": ";", '"': "'", "<": ",", ">": ".", "?": "/" };
+const POS = {};
+ROWS.forEach(([s, off], r) => [...s].forEach((ch, c) => (POS[ch] = [c + off, r])));
+const base = (ch) => { const l = ch.toLowerCase(); return SHIFT[l] || l; };
+function keyDist(x, y) { const p = POS[base(x)], q = POS[base(y)]; if (!p || !q) return null; return Math.hypot(p[0] - q[0], p[1] - q[1]); }
+
+function classes(s) {
+  return { lower: (s.match(/[a-z]/g) || []).length, upper: (s.match(/[A-Z]/g) || []).length, digit: (s.match(/[0-9]/g) || []).length, symbol: (s.match(/[^A-Za-z0-9]/g) || []).length };
+}
+const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+const sd = (xs) => { if (xs.length < 2) return null; const m = mean(xs); return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / (xs.length - 1)); };
+const r1 = (x) => (x === null || x === undefined || Number.isNaN(x) ? null : Math.round(x * 10) / 10);
+const r3 = (x) => (x === null || x === undefined || Number.isNaN(x) ? null : Math.round(x * 1000) / 1000);
+const isMod = (k) => ["Shift", "Control", "Alt", "Meta", "CapsLock"].includes(k);
+
+function captureMetrics(c) {
+  const ev = c.events;
+  const downs = ev.filter((e) => e.ty === "d" && !e.r && !isMod(e.k) && e.k !== "Enter");
+  const printable = downs.filter((e) => e.k.length === 1);
+  // dwell: keydown -> next keyup with the same code
+  const dwell = [];
+  ev.forEach((e, idx) => {
+    if (e.ty !== "d" || e.r || e.k.length !== 1) return;
+    const up = ev.slice(idx + 1).find((u) => u.ty === "u" && u.c === e.c);
+    if (up) dwell.push(up.t - e.t);
+  });
+  const dd = []; for (let i = 1; i < downs.length; i++) dd.push(downs[i].t - downs[i - 1].t);
+  const typeMs = c.tFirst !== null && c.tEnter !== null ? c.tEnter - c.tFirst : null;
+  const len = c.value.length;
+  return {
+    length: len, ...classes(c.value),
+    think_ms: r1(c.tFirst !== null ? c.tFirst - c.tPrompt : null),
+    type_ms: r1(c.tEnter !== null && c.tFirst !== null ? c.tEnter - c.tFirst : null),
+    cps: r3(typeMs && typeMs > 0 ? len / (typeMs / 1000) : null),
+    kps: r3(typeMs && typeMs > 0 ? downs.length / (typeMs / 1000) : null),
+    n_keys: downs.length, n_printable: printable.length,
+    correction_ratio: r3(len ? printable.length / len : null),
+    dwell_mean: r1(mean(dwell)), dwell_sd: r1(sd(dwell)),
+    flight_mean: r1(mean(dd)), flight_sd: r1(sd(dd)), pause_max_ms: r1(dd.length ? Math.max(...dd) : null),
+    shift_count: ev.filter((e) => e.ty === "d" && e.k === "Shift" && !e.r).length,
+    autorepeat: ev.filter((e) => e.ty === "d" && e.r).length,
+  };
+}
+function posTag(i, len) { if (len <= 0) return "-"; const f = i / Math.max(1, len - 1); return i === 0 ? "head" : i >= len - 1 ? "tail" : f < 0.34 ? "front" : f > 0.66 ? "back" : "middle"; }
+function describeOps(a, b) {
+  const { d, ops } = levOps(a, b);
+  return {
+    d, osa: osa(a, b),
+    ops: ops.map((o) => {
+      const x = { op: o.op, pos: o.i, where: posTag(o.i, a.length), from: o.a, to: o.b };
+      if (o.op === "sub") {
+        x.case_only = o.a.toLowerCase() === o.b.toLowerCase();
+        x.same_key = base(o.a) === base(o.b);           // e.g. 1 -> ! (shift)
+        const kd = keyDist(o.a, o.b); x.key_dist = kd === null ? null : r3(kd);
+        x.adjacent = kd !== null && kd > 0 && kd <= 1.5;
+      }
+      return x;
+    }),
+  };
+}
+function classify3(p1, p2, p3) {
+  if (p3 === p2) return "same_as_2";
+  if (p3 === p1) return "same_as_1";
+  const d2 = levOps(p2, p3).d, d1 = levOps(p1, p3).d;
+  if (Math.min(d1, d2) <= 2) return "near";
+  return "different";
+}
+function derive(s) {
+  const [a1, a2, a3] = s.attempts;
+  const p = s.attempts.map((a) => a.value);
+  const e12 = describeOps(p[0], p[1]), e23 = describeOps(p[1], p[2]), e13 = describeOps(p[0], p[2]);
+  const u = s.username.value;
+  return {
+    per_attempt: s.attempts.map((a, i) => ({
+      ...captureMetrics(a),
+      enter_to_enter_ms: i === 0 ? null : r1(a.tEnter - s.attempts[i - 1].tEnter),
+      lev_username: levOps(u, a.value).d,
+      rejected_count: s.rejected.filter((r) => r.kind === "pw" + a.n).length,
+    })),
+    username: captureMetrics(s.username),
+    d12: e12.d, d23: e23.d, d13: e13.d, osa12: e12.osa, osa23: e23.osa,
+    ops12: e12.ops, ops23: e23.ops,
+    cond_ok: e12.d >= 1 && e12.d <= 2,
+    a3_class: classify3(p[0], p[1], p[2]),
+  };
+}
+
+/* ---------- post questions ---------- */
+$("toPost").onclick = () => {
+  session.derived = derive(session);
+  const d = session.derived;
+  const row = (k, v) => `<span class="k">${k}</span><span class="v">${v}</span>`;
+  $("review").innerHTML =
+    row("ユーザ名", esc(session.username.value)) +
+    session.attempts.map((a) => row(`${a.n}回目`, esc(a.value) + ` <span class="note">(${a.value.length}文字)</span>`)).join("") +
+    row("1回目→2回目", `${d.d12}文字ちがい ` + (d.cond_ok ? '<span class="pill ok">条件どおり</span>' : '<span class="pill ng">1〜2文字ではない</span>'));
+  document.querySelectorAll('#vPost input').forEach((i) => (i.checked = false));
+  $("finish").disabled = true;
+  show("vPost");
+};
+$("vPost").addEventListener("change", (e) => {
+  if (e.target.name === "pt") {
+    const none = document.querySelector('input[name="pt"][value="none"]');
+    if (e.target.value === "none" && e.target.checked) document.querySelectorAll('input[name="pt"]:not([value="none"])').forEach((x) => (x.checked = false));
+    else if (e.target.checked) none.checked = false;
+  }
+  const typo = [...document.querySelectorAll('input[name="pt"]:checked')];
+  $("finish").disabled = !(radioVal("p2") && radioVal("p3") && typo.length);
+});
+
+$("finish").onclick = async () => {
+  $("finish").disabled = true;
+  session.post = {
+    change2: radioVal("p2"), intent3: radioVal("p3"),
+    unintended: [...document.querySelectorAll('input[name="pt"]:checked')].map((x) => x.value),
+  };
+  session.completedAt = new Date().toISOString();
+  LS.set("done_count_" + session.pid, session.sessionNo);
+  $("doneSaved").hidden = true; $("doneRemote").hidden = true;
+  let saved = false;
+  if (ENDPOINT) {
+    $("finish").textContent = "送信中…";
+    try {
+      const res = await fetch(ENDPOINT, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(session) });
+      const txt = (await res.text()).trim();
+      saved = res.ok && txt.startsWith("ok");
+    } catch (e) { console.warn(e); }
+    $("finish").textContent = "完了";
+  }
+  if (saved) {
+    $("doneSaved").hidden = false;
+    $("doneSavedMsg").textContent = `送信しました(参加者 ${session.pid},${session.sessionNo}回目).このままページを閉じて大丈夫です.`;
+  } else {
+    const pend = LS.get("pending_sessions", []);
+    pend.push(session); LS.set("pending_sessions", pend);
+    showRemote(pend);
+  }
+  $("againNote").hidden = session.sessionNo >= CFG.recommendedSessions;
+  $("again").textContent = session.sessionNo >= CFG.recommendedSessions ? "同じ参加者でもう1回(任意)" : `同じ参加者でもう1回(次は${session.sessionNo + 1}回目)`;
+  show("vDone");
+};
+
+function showRemote(pend) {
+  $("doneRemote").hidden = false;
+  const mine = pend.filter((s) => s.pid === session.pid);
+  $("remoteCount").textContent = `このブラウザで記録した参加者 ${session.pid} のデータ: ${mine.length}回分(まとめて1回送れば大丈夫です)`;
+  $("remoteData").value = JSON.stringify({ kind: "ssh-typing-collect", schema: CFG.schema, sessions: mine });
+  $("saveRemote").hidden = false;
+}
+$("copyRemote").onclick = async () => {
+  const ta = $("remoteData");
+  try { await navigator.clipboard.writeText(ta.value); $("copyMsg").textContent = "コピーしました"; }
+  catch { ta.focus(); ta.select(); $("copyMsg").textContent = "選択しました.Ctrl+C(⌘+C)でコピーしてください"; }
+};
+$("saveRemote").onclick = async () => {
+  try {
+    const blob = new Blob([$("remoteData").value], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `ssh_typing_${session.pid}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    $("copyMsg").textContent = "ファイルを保存しました";
+  } catch (e) { $("copyMsg").textContent = "保存できませんでした.コピーで送ってください"; }
+};
+$("again").onclick = () => { participant && startPracticeSkip(); };
+function startPracticeSkip() { show("vTask"); startMain(); }
+$("newPerson").onclick = () => {
+  participant = null; session = null;
+  try { localStorage.removeItem("auto_pid"); } catch {}
+  document.querySelectorAll("#vSurvey input[type=radio]").forEach((i) => (i.checked = false));
+  $("pid").value = ""; $("agree").checked = false; $("toSurvey").disabled = true; checkSurvey();
+  $("introTitle").textContent = "やること";
+  show("vConsent");
+};
+
+render();
+</script>
+</body>
+</html>
